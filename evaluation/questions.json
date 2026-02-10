@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "question": "What is LMCache?",
+    "expected_answer": "LMCache is an open-source system that enables persistent and shareable KV (Key-Value) cache for large language model inference, reducing Time-To-First-Token by avoiding redundant KV cache computation.",
+    "key_facts": ["persistent", "shareable", "KV cache", "open-source", "TTFT"]
+  },
+  {
+    "id": 2,
+    "question": "What problem does LMCache solve?",
+    "expected_answer": "LMCache solves the problem of redundant recomputation of KV cache in transformer-based LLMs. For long contexts, prefill computation can take 10+ seconds, and LMCache eliminates this by storing and reusing KV tensors.",
+    "key_facts": ["recomputation", "KV cache", "prefill", "redundant"]
+  },
+  {
+    "id": 3,
+    "question": "What is KV cache in the context of LLMs?",
+    "expected_answer": "KV cache stores the Key and Value vectors computed during the attention mechanism in transformer layers. It allows previously computed KV pairs to be reused during autoregressive generation, so only new tokens need processing.",
+    "key_facts": ["Key", "Value", "vectors", "attention mechanism", "transformer"]
+  },
+  {
+    "id": 4,
+    "question": "What are the three architecture patterns enabled by LMCache?",
+    "expected_answer": "The three architecture patterns are: 1) Instant RAG (caching retrieved documents' KV cache), 2) Prefill-Decode Disaggregation (separating prefill on H100 from decode on L4), and 3) Multi-Turn Context Sharing (caching conversation history).",
+    "key_facts": ["Instant RAG", "Prefill-Decode Disaggregation", "Multi-Turn Context Sharing"]
+  },
+  {
+    "id": 5,
+    "question": "What TTFT improvement does LMCache achieve for 128K context?",
+    "expected_answer": "For 128K context, LMCache reduces TTFT from 11 seconds to 1.5 seconds, achieving a 7.3x speedup.",
+    "key_facts": ["11 seconds", "1.5 seconds", "128K", "7.3x"]
+  },
+  {
+    "id": 6,
+    "question": "What is Prefill-Decode Disaggregation and how does it work?",
+    "expected_answer": "PD Disaggregation separates the prefill phase (computing KV cache, compute-intensive, runs on H100) from the decode phase (generating tokens, memory-bandwidth-bound, runs on cheaper L4 GPUs). LMCache transfers the KV cache between nodes, reducing costs by 3-5x.",
+    "key_facts": ["prefill", "decode", "H100", "L4", "3-5x cost reduction"]
+  },
+  {
+    "id": 7,
+    "question": "What are the four under-the-hood optimizations in LMCache?",
+    "expected_answer": "The four optimizations are: 1) Batched data transfer (amortizing transfer overhead), 2) Pipelined computation and transfer (overlapping compute with data transfer), 3) Modular connector architecture (supporting multiple frameworks via unified API), 4) Tiered storage system (GPU HBM, CPU DRAM, Local SSD, Network storage).",
+    "key_facts": ["batched data transfer", "pipelined", "modular connector", "tiered storage"]
+  },
+  {
+    "id": 8,
+    "question": "Which inference frameworks does LMCache support?",
+    "expected_answer": "LMCache supports two major frameworks: vLLM (via PagedAttention plugin) and SGLang (via RadixAttention integration).",
+    "key_facts": ["vLLM", "SGLang"]
+  },
+  {
+    "id": 9,
+    "question": "When should you NOT use LMCache?",
+    "expected_answer": "LMCache is not beneficial for: 1) Unique contexts with no overlap between requests, 2) Short prompts under ~1K tokens, 3) Memory-constrained environments, 4) Latency-insensitive batch processing.",
+    "key_facts": ["unique contexts", "short prompts", "memory-constrained", "batch processing"]
+  },
+  {
+    "id": 10,
+    "question": "What are the tiers in LMCache's tiered storage system?",
+    "expected_answer": "LMCache uses four storage tiers: Tier 1 - GPU HBM (~1 TB/s, 80GB on H100), Tier 2 - CPU DRAM (~100 GB/s, hundreds of GB), Tier 3 - Local SSD (~7 GB/s, terabyte-scale), Tier 4 - Network Storage (shared across nodes via RDMA or TCP).",
+    "key_facts": ["GPU HBM", "CPU DRAM", "Local SSD", "Network Storage"]
+  }
+]

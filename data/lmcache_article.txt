@@ -1,0 +1,134 @@
+# LMCache: Persistent and Shareable KV Cache for Long-Context LLM Inference
+
+## Introduction
+
+LMCache is an open-source system that enables persistent and shareable KV (Key-Value) cache for large language model (LLM) inference. It dramatically reduces the Time-To-First-Token (TTFT) by avoiding redundant computation of KV cache across requests, sessions, and even different inference engines. LMCache works as a plugin for popular inference frameworks like vLLM and SGLang.
+
+The core problem LMCache solves is the recomputation of KV cache. In transformer-based LLMs, every input token needs to go through the attention mechanism, which computes Key and Value vectors for each layer. For long contexts (e.g., 128K tokens), this prefill computation can take 10+ seconds. LMCache eliminates this redundancy by storing and reusing these KV tensors.
+
+## What is KV Cache?
+
+KV cache (Key-Value cache) stores the Key and Value vectors computed during the attention mechanism in transformer layers. During autoregressive generation, previously computed KV pairs don't need to be recomputed — they can be cached and reused. This is a fundamental optimization in all modern LLM inference systems.
+
+Without KV cache, generating each new token would require reprocessing the entire input sequence. With KV cache, only the new token needs to be processed, while previous Key and Value vectors are retrieved from cache.
+
+The KV cache size grows linearly with sequence length and model size. For a 70B parameter model with 128K context, the KV cache can consume over 40GB of GPU memory. This makes efficient KV cache management critical for production deployments.
+
+## Architecture Patterns
+
+LMCache enables three key architecture patterns:
+
+### 1. Instant RAG (Retrieval-Augmented Generation)
+
+In traditional RAG, the retrieved documents must be processed (prefilled) with every query, even if the same documents are retrieved repeatedly. LMCache stores the KV cache of commonly retrieved documents, making subsequent queries with the same context nearly instant.
+
+For example, if a RAG system frequently retrieves the same company handbook (50K tokens), LMCache computes its KV cache once and reuses it for all subsequent queries. This reduces TTFT from ~8 seconds to under 500ms for the cached portion.
+
+### 2. Prefill-Decode Disaggregation (PD Disaggregation)
+
+PD Disaggregation separates the prefill phase (computing KV cache from the input) from the decode phase (generating tokens one by one). The prefill phase is compute-intensive and benefits from powerful GPUs like H100, while the decode phase is memory-bandwidth-bound and can run efficiently on cheaper GPUs like L4.
+
+LMCache enables this by storing the computed KV cache from the prefill node and transferring it to the decode node. The prefill node processes the input on an H100, saves the KV cache to LMCache, and the decode node on an L4 retrieves it to generate the response. This architecture can reduce inference costs by 3-5x while maintaining latency.
+
+### 3. Multi-Turn Context Sharing
+
+In multi-turn conversations, the context (system prompt + conversation history) grows with each turn. Without LMCache, each new message requires reprocessing the entire conversation history. LMCache stores the KV cache of the conversation prefix, so only the new user message needs to be prefilled.
+
+For a conversation with 100K tokens of history, this can reduce TTFT from 11 seconds to approximately 1.5 seconds — the time needed only to process the new message rather than the entire context.
+
+## Performance Benchmarks
+
+LMCache delivers significant performance improvements:
+
+- **128K context TTFT**: Reduced from 11 seconds to 1.5 seconds (7.3x speedup)
+- **RAG with cached documents**: TTFT reduced from 8 seconds to 0.5 seconds (16x speedup)
+- **Multi-turn conversations**: 60-90% TTFT reduction depending on conversation length
+- **Throughput**: Up to 3x improvement in requests per second for shared-context workloads
+- **Cost savings**: 3-5x reduction in GPU costs through PD Disaggregation
+
+These benchmarks were measured on Llama 3.1 70B with vLLM backend on NVIDIA H100 GPUs.
+
+## Under-the-Hood Optimizations
+
+LMCache achieves its performance through four key optimizations:
+
+### 1. Batched Data Transfer
+
+Instead of transferring KV tensors token-by-token, LMCache batches the transfer in large chunks. This amortizes the overhead of data transfer operations and maximizes bandwidth utilization between storage tiers.
+
+### 2. Pipelined Computation and Transfer
+
+LMCache overlaps KV cache computation with data transfer. While one batch of KV pairs is being stored/loaded, the next batch is being computed. This pipeline hides transfer latency behind computation latency, achieving near-zero overhead for cache operations.
+
+### 3. Modular Connector Architecture
+
+LMCache uses a modular connector system that abstracts the interface between the inference engine and the cache backend. This allows LMCache to support multiple inference frameworks (vLLM, SGLang) and multiple storage backends through a unified API. Adding support for a new framework requires implementing only the connector interface.
+
+### 4. Tiered Storage System
+
+LMCache implements a multi-tier storage hierarchy:
+- **Tier 1: GPU HBM** — Fastest access (~1 TB/s bandwidth), limited capacity (80GB on H100)
+- **Tier 2: CPU DRAM** — Fast access (~100 GB/s bandwidth), larger capacity (hundreds of GB)
+- **Tier 3: Local SSD** — Moderate speed (~7 GB/s for NVMe), terabyte-scale capacity
+- **Tier 4: Network Storage** — Shared across nodes, enables cross-instance cache sharing via RDMA or TCP
+
+The system automatically manages data placement and migration between tiers based on access patterns and capacity constraints. Hot data stays in GPU memory, warm data in CPU DRAM, and cold data on SSD or network storage.
+
+## Supported Frameworks
+
+LMCache currently supports two major LLM inference frameworks:
+
+### vLLM
+vLLM is the most popular open-source LLM inference engine. LMCache integrates as a plugin that intercepts the KV cache operations in vLLM's PagedAttention mechanism. Configuration requires adding a few lines to the vLLM launch command.
+
+### SGLang
+SGLang is a fast serving framework for large language models. LMCache integrates with SGLang's RadixAttention mechanism, providing similar cache persistence and sharing capabilities. The integration is available through SGLang's built-in cache configuration.
+
+Both frameworks support all LMCache features including tiered storage, cache sharing, and PD Disaggregation.
+
+## When NOT to Use LMCache
+
+LMCache is not beneficial in all scenarios:
+
+### Unique Contexts
+If every request has a completely unique context with no overlap between requests, LMCache provides minimal benefit. The overhead of storing and looking up cache entries may actually hurt performance. LMCache shines when there is context reuse across requests.
+
+### Short Prompts
+For prompts shorter than ~1K tokens, the prefill computation is already fast (under 100ms). The overhead of cache lookup and retrieval may not justify the savings. LMCache is most beneficial for long contexts (4K+ tokens).
+
+### Memory-Constrained Environments
+LMCache requires additional memory for storing cached KV tensors. In environments where GPU and CPU memory are already fully utilized by the model weights and active requests, adding LMCache storage may require reducing the batch size, potentially lowering overall throughput.
+
+### Latency-Insensitive Batch Processing
+For offline batch processing where latency is not critical, the additional complexity of LMCache may not be warranted. Simple sequential processing without caching is simpler to manage and debug.
+
+## Installation and Configuration
+
+LMCache can be installed via pip:
+
+```bash
+pip install lmcache
+```
+
+For vLLM integration:
+```bash
+pip install lmcache[vllm]
+```
+
+Basic configuration involves setting the storage backend and cache parameters:
+
+```python
+from lmcache import LMCacheConfig
+
+config = LMCacheConfig(
+    storage_backend="tiered",
+    gpu_cache_size="10GB",
+    cpu_cache_size="50GB",
+    ssd_cache_path="/tmp/lmcache",
+    chunk_size=256,
+)
+```
+
+## Conclusion
+
+LMCache addresses a fundamental inefficiency in LLM inference — the redundant computation of KV cache for shared or repeated contexts. By providing persistent and shareable KV cache with tiered storage, it enables significant performance improvements (up to 16x TTFT reduction) and cost savings (3-5x through PD Disaggregation). Its plugin architecture makes it easy to integrate with existing inference frameworks like vLLM and SGLang.

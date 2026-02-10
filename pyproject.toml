@@ -1,0 +1,13 @@
+[project]
+name = "rag-2.0"
+version = "0.1.0"
+description = "RAG 2.0 pipeline with contextual retrieval, re-ranking, and self-reflection"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
