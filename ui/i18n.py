@@ -46,6 +46,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Upload a document",
         "ru": "Загрузите документ",
     },
+    "ingest_source_upload": {
+        "en": "Upload file",
+        "ru": "Загрузить файл",
+    },
+    "ingest_source_path": {
+        "en": "File path",
+        "ru": "Путь к файлу",
+    },
+    "ingest_path_input": {
+        "en": "Enter full file path",
+        "ru": "Введите полный путь к файлу",
+    },
+    "ingest_path_placeholder": {
+        "en": "/mnt/c/Users/.../document.pdf or /home/.../file.txt",
+        "ru": "/mnt/c/Users/.../document.pdf или /home/.../file.txt",
+    },
+    "ingest_path_not_found": {
+        "en": "File not found: {path}",
+        "ru": "Файл не найден: {path}",
+    },
     "ingest_supported": {
         "en": "Supported formats: TXT, PDF, DOCX, PPTX, XLSX, HTML",
         "ru": "Поддерживаемые форматы: TXT, PDF, DOCX, PPTX, XLSX, HTML",

@@ -91,33 +91,64 @@ with tab_ingest:
     st.header(t("ingest_header"))
     st.markdown(t("ingest_supported"))
 
-    uploaded = st.file_uploader(
+    source_mode = st.radio(
         t("ingest_upload"),
-        type=["txt", "pdf", "docx", "pptx", "xlsx", "html"],
+        options=["upload", "path"],
+        format_func=lambda x: t("ingest_source_upload") if x == "upload" else t("ingest_source_path"),
+        horizontal=True,
+        label_visibility="collapsed",
     )
+
+    file_path_to_ingest: str | None = None
+    cleanup_temp = False
+
+    if source_mode == "upload":
+        uploaded = st.file_uploader(
+            t("ingest_upload"),
+            type=["txt", "pdf", "docx", "pptx", "xlsx", "html"],
+        )
+    else:
+        uploaded = None
+        file_path_input = st.text_input(
+            t("ingest_path_input"),
+            placeholder=t("ingest_path_placeholder"),
+        )
+        if file_path_input:
+            p = Path(file_path_input.strip())
+            if p.is_file():
+                file_path_to_ingest = str(p)
+            else:
+                st.warning(t("ingest_path_not_found", path=file_path_input))
+
+    can_ingest = (source_mode == "upload" and uploaded is not None) or (
+        source_mode == "path" and file_path_to_ingest is not None
+    )
+
     skip_enrichment = st.checkbox(t("ingest_skip_enrichment"))
 
-    if st.button(t("ingest_button"), disabled=uploaded is None):
-        if uploaded is not None:
-            from ingestion.chunker import chunk_text
-            from ingestion.enricher import embed_chunks, enrich_chunks
-            from ingestion.loader import load_file
+    if st.button(t("ingest_button"), disabled=not can_ingest):
+        from ingestion.chunker import chunk_text
+        from ingestion.enricher import embed_chunks, enrich_chunks
+        from ingestion.loader import load_file
 
-            store = get_store()
+        store = get_store()
 
-            # Save uploaded file to temp
+        # Resolve file path
+        if source_mode == "upload" and uploaded is not None:
             suffix = Path(uploaded.name).suffix
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(uploaded.getvalue())
-                tmp_path = tmp.name
+                file_path_to_ingest = tmp.name
+            cleanup_temp = True
 
+        if file_path_to_ingest is not None:
             try:
                 progress = st.empty()
                 status_text = st.empty()
 
                 # Step 1: Load
                 progress.progress(0.1, text=t("ingest_loading"))
-                text = load_file(tmp_path, use_gpu=st.session_state.use_gpu)
+                text = load_file(file_path_to_ingest, use_gpu=st.session_state.use_gpu)
                 status_text.info(t("ingest_chars_loaded", chars=len(text)))
 
                 # Step 2: Chunk
@@ -145,7 +176,8 @@ with tab_ingest:
             except Exception as e:
                 st.error(t("error", msg=str(e)))
             finally:
-                Path(tmp_path).unlink(missing_ok=True)
+                if cleanup_temp:
+                    Path(file_path_to_ingest).unlink(missing_ok=True)
 
 
 # ===== Tab 2: Search & Q&A =====
